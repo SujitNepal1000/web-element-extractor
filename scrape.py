@@ -2,9 +2,9 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.chrome.service import Service
 import pandas as pd
 from bs4 import BeautifulSoup
-from selenium.webdriver.chrome.service import Service
 import time
 
 class TestRunner:
@@ -24,44 +24,64 @@ class TestRunner:
             self.driver.get(url)
             time.sleep(2)  # Wait for page load
         except Exception as e:
-            print(f"Error starting browser: {e}")  # Wait for the page to load
+            print(f"Error starting browser: {e}")
 
     def enter_value(self, locator, value):
-        try:
-            element = self.driver.find_element(By.XPATH, locator)
-            element.clear()
-            element.send_keys(value)
-            time.sleep(1)  # Adding delay for better visibility in actions
-        except Exception as e:
-            raise Exception(f"Error entering value: {e}")
+        if self.driver:
+            try:
+                element = self.driver.find_element(By.XPATH, locator)
+                element.clear()
+                element.send_keys(value)
+                time.sleep(1)
+            except Exception as e:
+                print(f"Error entering value: {e}")
+        else:
+            print("Browser is not initialized. Call start_browser() first.")
 
     def click_element(self, locator):
-        try:
-            element = self.driver.find_element(By.XPATH, locator)
-            ActionChains(self.driver).move_to_element(element).click().perform()
-            time.sleep(3)  # Wait for action to complete
-        except Exception as e:
-            raise Exception(f"Error clicking element: {e}")
+        if self.driver:
+            try:
+                element = self.driver.find_element(By.XPATH, locator)
+                ActionChains(self.driver).move_to_element(element).click().perform()
+                time.sleep(3)
+            except Exception as e:
+                print(f"Error clicking element: {e}")
+        else:
+            print("Browser is not initialized. Call start_browser() first.")
 
     def scroll_to_element(self, locator):
-        try:
-            element = self.driver.find_element(By.XPATH, locator)
-            self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
-            time.sleep(1)  # Adding delay for better visibility in actions
-        except Exception as e:
-            raise Exception(f"Error scrolling to element: {e}")
+        if self.driver:
+            try:
+                element = self.driver.find_element(By.XPATH, locator)
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                time.sleep(1)
+            except Exception as e:
+                print(f"Error scrolling to element: {e}")
+        else:
+            print("Browser is not initialized. Call start_browser() first.")
 
     def verify_element(self, locator):
-        try:
-            element = self.driver.find_element(By.XPATH, locator)
-            assert element.is_displayed(), f"Element with locator {locator} is not displayed."
-        except Exception as e:
-            raise Exception(f"Error verifying element: {e}")
+        if self.driver:
+            try:
+                element = self.driver.find_element(By.XPATH, locator)
+                assert element.is_displayed(), f"Element with locator {locator} is not displayed."
+            except Exception as e:
+                print(f"Error verifying element: {e}")
+        else:
+            print("Browser is not initialized. Call start_browser() first.")
 
     def get_page_source(self):
-        return self.driver.page_source
+        if self.driver:
+            return self.driver.page_source
+        else:
+            print("Browser is not initialized. Call start_browser() first.")
+            return None
 
     def extract_locators(self, html_content):
+        if not html_content:
+            print("No HTML content provided for locator extraction.")
+            return pd.DataFrame()
+
         soup = BeautifulSoup(html_content, "html.parser")
         elements = []
 
@@ -196,25 +216,29 @@ class TestRunner:
                     add_element(name, tag, attrs, placeholder=attrs['placeholder'])
                 elif tag == "label":
                     add_element(name, tag, attrs, text=element.get_text(strip=True))
-                elif tag == "div":
-                    # Give priority to text extraction for divs
-                    if element.get_text(strip=True):
-                        add_element(name, tag, attrs, text=element.get_text(strip=True))
-                    else:
-                        add_element(name, tag, attrs)  # Fallback to add_element without text
-                elif tag == "span":
-                    # Give priority to text extraction for spans
+                elif tag in ["span", "div"] and element.get_text(strip=True):
                     add_element(name, tag, attrs, text=element.get_text(strip=True))
-                else:
-                    add_element(name, tag, attrs)
 
         df = pd.DataFrame(elements)
-        df = df[["Name", "XPath", "ID", "Class", "CSS Selector", "Full Link", "Partial Link"]]
-        df.index.name = "S.N"
-        df.reset_index(inplace=True)
-
+        df.index += 1
         return df
 
-    def close_browser(self):
+    def save_locators_to_file(self, filename):
+        html_content = self.get_page_source()
+        df = self.extract_locators(html_content)
+        df.index.name = 'S.N'
+        df = df[["Name", "ID", "Class", "XPath", "CSS Selector", "Full Link", "Partial Link"]]
+        df.to_csv(filename, index=True)
+        print(f"Locators saved to {filename}")
+
+    def stop_browser(self):
         if self.driver:
             self.driver.quit()
+            self.driver = None
+            print("Browser closed.")
+
+# Usage Example
+test_runner = TestRunner()
+test_runner.start_browser("https://example.com")  # Start the browser with your desired URL
+test_runner.save_locators_to_file("locators.csv")
+test_runner.stop_browser()  # Close the browser when done
